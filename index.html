@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Party Game Hub</title>
+  <link rel="stylesheet" href="style.css">
+  <!-- Firebase SDK (Compat版: ビルド不要でそのまま動く) -->
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>🎲 Party Game Hub</h1>
+      <span id="connection-status" class="badge">未接続</span>
+    </header>
+
+    <!-- 画面1：ロビー（部屋作成・参加） -->
+    <section id="screen-lobby" class="card">
+      <h2>プレイヤー設定</h2>
+      <input type="text" id="player-name" placeholder="ニックネームを入力" maxlength="12">
+
+      <div class="lobby-actions">
+        <div class="action-box">
+          <h3>新しく部屋を作る</h3>
+          <button id="btn-create-room" class="btn primary">部屋を作成する</button>
+        </div>
+
+        <div class="action-box">
+          <h3>友達の部屋に入る</h3>
+          <input type="text" id="room-code-input" placeholder="4桁の部屋コード (例: 1234)" maxlength="4">
+          <button id="btn-join-room" class="btn secondary">参加する</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 画面2：待機室（メンバー確認・ゲーム選択） -->
+    <section id="screen-room" class="card hidden">
+      <div class="room-header">
+        <h2>部屋コード: <span id="display-room-code" class="code-text">----</span></h2>
+        <button id="btn-copy-code" class="btn small">コードをコピー</button>
+      </div>
+
+      <div class="grid-2col">
+        <div>
+          <h3>参加メンバー (<span id="player-count">0</span>人)</h3>
+          <ul id="player-list" class="player-list"></ul>
+        </div>
+
+        <div id="host-controls" class="hidden">
+          <h3>ゲームを選択（ホスト専用）</h3>
+          <select id="game-select"></select>
+          <p id="game-description" class="desc-text"></p>
+          <button id="btn-start-game" class="btn primary">ゲーム開始！</button>
+        </div>
+        <div id="guest-waiting">
+          <p class="waiting-msg">ホストがゲームを選択するのを待っています...</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 画面3：ゲームプレイエリア -->
+    <section id="screen-game" class="card hidden">
+      <div class="game-top-bar">
+        <h2 id="active-game-title">ゲームタイトル</h2>
+        <button id="btn-back-to-room" class="btn small danger hidden">待機室へ戻る</button>
+      </div>
+      <div id="game-board"></div>
+    </section>
+
+    <!-- 共通チャット -->
+    <section id="chat-panel" class="card hidden">
+      <h3>💬 チャット</h3>
+      <div id="chat-messages" class="chat-box"></div>
+      <form id="chat-form" class="chat-input-row">
+        <input type="text" id="chat-input" placeholder="メッセージを入力..." autocomplete="off">
+        <button type="submit" class="btn primary small">送信</button>
+      </form>
+    </section>
+  </div>
+
+  <!-- 土台スクリプト -->
+  <script src="js/network.js"></script>
+  <script src="js/app.js"></script>
+  <!-- 追加ゲーム -->
+  <script src="js/games/click_battle.js"></script>
+</body>
+</html>

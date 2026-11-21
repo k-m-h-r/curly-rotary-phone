@@ -13,10 +13,12 @@
       .ww-phase-badge {
         padding: 6px 14px; border-radius: 999px; font-weight: bold; font-size: 0.95rem;
       }
+      .ww-phase-setup { background: #4f46e5; color: #fff; }
       .ww-phase-day { background: #0284c7; color: #fff; }
       .ww-phase-vote { background: #d97706; color: #fff; }
       .ww-phase-night { background: #312e81; color: #e0e7ff; border: 1px solid #6366f1; }
       .ww-phase-over { background: #059669; color: #fff; }
+      .ww-phase-teru { background: #eab308; color: #0f172a; }
 
       .ww-timer { font-size: 1.2rem; font-weight: bold; color: #38bdf8; }
 
@@ -26,14 +28,16 @@
       }
       .ww-role-card.wolf { border-color: #ef4444; background: linear-gradient(135deg, #450a0a, #0f172a); }
       .ww-role-card.seer { border-color: #a855f7; background: linear-gradient(135deg, #3b0764, #0f172a); }
+      .ww-role-card.medium { border-color: #06b6d4; background: linear-gradient(135deg, #083344, #0f172a); }
       .ww-role-card.guard { border-color: #3b82f6; background: linear-gradient(135deg, #172554, #0f172a); }
       .ww-role-card.madman { border-color: #f97316; background: linear-gradient(135deg, #431407, #0f172a); }
+      .ww-role-card.teruteru { border-color: #eab308; background: linear-gradient(135deg, #422006, #0f172a); }
 
       .ww-role-title { font-size: 1.25rem; font-weight: bold; margin-bottom: 6px; }
       .ww-role-desc { font-size: 0.9rem; color: #cbd5e1; }
       .ww-secret-box {
         margin-top: 10px; padding: 10px; background: rgba(0,0,0,0.35);
-        border-radius: 8px; font-size: 0.9rem;
+        border-radius: 8px; font-size: 0.9rem; display: flex; flex-direction: column; gap: 6px;
       }
 
       .ww-announce {
@@ -58,6 +62,26 @@
       .ww-status-tag.dead { background: #7f1d1d; color: #fecaca; }
       .ww-status-tag.ready { background: #065f46; color: #a7f3d0; }
 
+      /* セットアップ画面用 */
+      .ww-setup-list { display: flex; flex-direction: column; gap: 8px; margin: 12px 0; }
+      .ww-setup-row {
+        display: flex; justify-content: space-between; align-items: center;
+        background: #0f172a; padding: 10px 14px; border-radius: 8px; border: 1px solid #334155;
+      }
+      .ww-setup-info { display: flex; flex-direction: column; }
+      .ww-setup-team { font-size: 0.75rem; color: #94a3b8; }
+      .ww-setup-ctrl { display: flex; align-items: center; gap: 10px; }
+      .ww-count-btn {
+        width: 32px; height: 32px; border-radius: 6px; border: none;
+        background: #334155; color: #fff; font-size: 1.1rem; font-weight: bold; cursor: pointer;
+      }
+      .ww-count-btn:hover { background: #475569; }
+      .ww-count-val { font-size: 1.15rem; font-weight: bold; min-width: 24px; text-align: center; }
+      .ww-setup-summary {
+        display: flex; justify-content: space-between; align-items: center;
+        padding: 12px; border-radius: 8px; background: #0f172a; margin-bottom: 12px; font-weight: bold;
+      }
+
       .ww-log-list {
         list-style: none; max-height: 160px; overflow-y: auto;
         background: #0f172a; padding: 10px 14px; border-radius: 8px; font-size: 0.88rem;
@@ -67,46 +91,62 @@
 
       .ww-host-bar {
         display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end;
-        padding-top: 8px; border-top: 1px solid #334155;
+        padding-top: 10px; margin-top: 10px; border-top: 1px solid #334155;
       }
     `;
     document.head.appendChild(style);
   };
 
-  // 役職マスターデータ
+  // 表示順序と役職マスターデータ
+  const ROLE_ORDER = ["werewolf", "seer", "medium", "guard", "madman", "teruteru", "villager"];
+
   const ROLES = {
     werewolf: {
       id: "werewolf",
       name: "🐺 人狼",
-      team: "wolf",
+      teamLabel: "人狼陣営",
       css: "wolf",
-      desc: "正体を隠して市民を欺き、夜の襲撃で人間を減らしましょう。人狼の数が人間（狂人含む）以上になると勝利です。"
+      desc: "正体を隠して市民を欺き、夜の襲撃で人間を減らしましょう。人狼の数が人間（狂人・てるてる含む）以上になると勝利です。"
     },
     seer: {
       id: "seer",
       name: "🔮 占い師",
-      team: "village",
+      teamLabel: "市民陣営",
       css: "seer",
       desc: "毎晩1人を占い、その人が「人狼」か「人間（人狼ではない）」かを見抜くことができます。"
+    },
+    medium: {
+      id: "medium",
+      name: "🕯️ 霊媒師",
+      teamLabel: "市民陣営",
+      css: "medium",
+      desc: "昼の投票で追放された人が「人狼」だったか「人間（人狼ではない）」だったかを夜に知ることができます。"
     },
     guard: {
       id: "guard",
       name: "🛡️ 狩人",
-      team: "village",
+      teamLabel: "市民陣営",
       css: "guard",
       desc: "2日目以降の夜に自分以外の1人を護衛し、人狼の襲撃から守ることができます。"
     },
     madman: {
       id: "madman",
       name: "🃏 狂人",
-      team: "wolf",
+      teamLabel: "人狼陣営",
       css: "madman",
-      desc: "人狼陣営の人間です。特殊能力はありませんが、議論をかき乱して人狼を勝利に導けばあなたの勝ちです（占い結果は人間と出ます）。"
+      desc: "人狼陣営の人間です。特殊能力はありませんが、議論をかき乱して人狼を勝利に導けばあなたの勝ちです（占い・霊媒結果は人間）。"
+    },
+    teruteru: {
+      id: "teruteru",
+      name: "☀️ てるてる",
+      teamLabel: "第三陣営（単独）",
+      css: "teruteru",
+      desc: "市民でも人狼でもない第三陣営です。昼の投票で「自分が追放される」と即座に単独勝利となります！（襲撃死や生存決着は敗北）"
     },
     villager: {
       id: "villager",
       name: "🧑‍🌾 市民",
-      team: "village",
+      teamLabel: "市民陣営",
       css: "villager",
       desc: "特殊能力はありませんが、議論と推理で人狼を見つけ出し、昼の投票で追放しましょう。"
     }
@@ -117,23 +157,34 @@
   let initialized = false;
   let earlyPackets = [];
 
-  let myPrivate = null; // { role, fellowWolves, fortuneResults, myVote, myNightTarget, readyConfirmed }
+  let myPrivate = null;
   let publicState = null;
 
   // ホスト専用状態
   let hostTimer = null;
-  let hostPhase = "FIRST_NIGHT"; // FIRST_NIGHT | DAY_DISCUSS | DAY_VOTE | NIGHT | GAME_OVER
+  let hostPhase = "SETUP"; // SETUP | FIRST_NIGHT | DAY_DISCUSS | DAY_VOTE | NIGHT | GAME_OVER
+  let hostRoleCounts = {
+    werewolf: 1,
+    seer: 1,
+    medium: 0,
+    guard: 0,
+    madman: 0,
+    teruteru: 0,
+    villager: 2
+  };
   let hostDay = 1;
   let hostTimeLeft = 0;
   let hostRoles = {};         // playerId -> roleId
   let hostAlive = {};         // playerId -> boolean
   let hostReadyMap = {};      // 1日目夜：確認済みマップ
   let hostVotes = {};         // 昼投票：voterId -> targetId
-  let hostNightActions = {};  // 夜行動：{ attackTarget, wolfVoterName, seerTarget, seerDone, guardTarget }
+  let hostNightActions = {};  // 夜行動
   let hostFortuneLogs = {};   // playerId -> [{ day, targetName, isWolf }]
+  let hostMediumLogs = {};    // playerId -> [{ day, targetName, isWolf }]
   let hostHeadline = "";
   let hostLogs = [];
-  let hostWinnerTeam = null;  // "village" | "wolf"
+  let hostWinnerTeam = null;  // "village" | "wolf" | "teruteru"
+  let hostWinnerName = "";    // てるてる勝者名
 
   const esc = (str) => String(str).replace(/[&<>"']/g, s => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
@@ -160,30 +211,44 @@
     }
   };
 
-  // 人数に応じた役職リスト生成
-  const buildRoleDeck = (count) => {
-    if (count === 4) return ["werewolf", "seer", "villager", "villager"];
-    if (count === 5) return ["werewolf", "seer", "guard", "villager", "villager"];
-    if (count === 6) return ["werewolf", "seer", "guard", "madman", "villager", "villager"];
-    if (count === 7) return ["werewolf", "werewolf", "seer", "guard", "villager", "villager", "villager"];
-    if (count === 8) return ["werewolf", "werewolf", "seer", "guard", "madman", "villager", "villager", "villager"];
-
-    const wolfCount = count >= 10 ? 3 : 2;
-    const deck = [];
-    for (let i = 0; i < wolfCount; i++) deck.push("werewolf");
-    deck.push("seer", "guard", "madman");
-    while (deck.length < count) deck.push("villager");
-    return deck;
+  // 参加人数に応じたおすすめ役職配分を生成
+  const buildRecommendedCounts = (count) => {
+    const c = { werewolf: 1, seer: 1, medium: 0, guard: 0, madman: 0, teruteru: 0, villager: 0 };
+    if (count === 4) {
+      c.werewolf = 1; c.seer = 1; c.villager = 2;
+    } else if (count === 5) {
+      c.werewolf = 1; c.seer = 1; c.guard = 1; c.teruteru = 1; c.villager = 1;
+    } else if (count === 6) {
+      c.werewolf = 1; c.seer = 1; c.medium = 1; c.guard = 1; c.madman = 1; c.villager = 1;
+    } else if (count === 7) {
+      c.werewolf = 2; c.seer = 1; c.medium = 1; c.guard = 1; c.teruteru = 1; c.villager = 1;
+    } else if (count === 8) {
+      c.werewolf = 2; c.seer = 1; c.medium = 1; c.guard = 1; c.madman = 1; c.teruteru = 1; c.villager = 1;
+    } else {
+      c.werewolf = count >= 10 ? 3 : 2;
+      c.seer = 1;
+      c.medium = 1;
+      c.guard = 1;
+      c.madman = 1;
+      c.teruteru = 1;
+      const used = c.werewolf + c.seer + c.medium + c.guard + c.madman + c.teruteru;
+      c.villager = Math.max(0, count - used);
+    }
+    return c;
   };
 
-  // 勝利判定
+  const getTotalConfiguredRoles = () => {
+    return ROLE_ORDER.reduce((sum, key) => sum + (hostRoleCounts[key] || 0), 0);
+  };
+
+  // 勝利判定（市民陣営 vs 人狼陣営）
   const checkWinner = () => {
     let aliveWolves = 0;
     let aliveHumans = 0;
     ctx.players.forEach(p => {
       if (!hostAlive[p.id]) return;
       if (hostRoles[p.id] === "werewolf") aliveWolves++;
-      else aliveHumans++; // 狂人はカウント上は人間側
+      else aliveHumans++; // 狂人・てるてるもカウント上は人間側
     });
 
     if (aliveWolves === 0) return "village";
@@ -199,7 +264,7 @@
 
     // 各プレイヤーへ秘密データを個別送信
     ctx.players.forEach(p => {
-      const role = hostRoles[p.id];
+      const role = hostRoles[p.id] || null;
       let myNightTarget = null;
       if (role === "werewolf") myNightTarget = hostNightActions.attackTarget || null;
       if (role === "seer") myNightTarget = hostNightActions.seerTarget || null;
@@ -213,17 +278,19 @@
           ? { targetName: getPlayerName(hostNightActions.attackTarget), by: hostNightActions.wolfVoterName }
           : null,
         fortuneResults: hostFortuneLogs[p.id] || [],
+        mediumResults: hostMediumLogs[p.id] || [],
         myVote: hostVotes[p.id] || null,
         myNightTarget,
         readyConfirmed: !!hostReadyMap[p.id]
       });
     });
 
-    // 全員へ公開状態（生存者の役職は絶対に含めない）を送信
+    // 全員へ公開状態を送信
     const alivePlayers = ctx.players.filter(p => hostAlive[p.id]);
     ctx.broadcast({
       type: "WW_STATE",
       phase: hostPhase,
+      roleCounts: { ...hostRoleCounts },
       day: hostDay,
       timeLeft: hostTimeLeft,
       alive: { ...hostAlive },
@@ -234,8 +301,25 @@
       headline: hostHeadline,
       logs: hostLogs.slice(-15),
       winnerTeam: hostWinnerTeam,
+      winnerName: hostWinnerName,
       revealedRoles: hostPhase === "GAME_OVER" ? { ...hostRoles } : null
     });
+  };
+
+  // セットアップ画面を開く
+  const openSetupScreen = (keepCurrentCounts = false) => {
+    clearHostTimer();
+    hostPhase = "SETUP";
+    hostRoles = {};
+    hostAlive = {};
+    hostWinnerTeam = null;
+    hostWinnerName = "";
+    hostLogs = [];
+    if (!keepCurrentCounts) {
+      hostRoleCounts = buildRecommendedCounts(ctx.players.length);
+    }
+    hostHeadline = "ホストが役職の人数配分を設定しています。";
+    syncAll();
   };
 
   // 昼の議論タイマー開始
@@ -249,12 +333,7 @@
     syncAll();
 
     hostTimer = setInterval(() => {
-      // 画面が閉じられたらタイマー停止
-      if (!document.getElementById("ww-root")) {
-        clearHostTimer();
-        return;
-      }
-      if (hostPhase !== "DAY_DISCUSS") {
+      if (!document.getElementById("ww-root") || hostPhase !== "DAY_DISCUSS") {
         clearHostTimer();
         return;
       }
@@ -263,7 +342,6 @@
         clearHostTimer();
         startDayVote();
       } else {
-        // 毎秒全パケット送ると重いため、時間だけ同期
         ctx.broadcast({ type: "WW_TICK", timeLeft: hostTimeLeft });
       }
     }, 1000);
@@ -300,11 +378,31 @@
 
     const executedId = topCandidates[Math.floor(Math.random() * topCandidates.length)];
     const executedName = getPlayerName(executedId);
+    const executedRole = hostRoles[executedId];
     hostAlive[executedId] = false;
 
     const tieNote = topCandidates.length > 1 ? "（同票のためランダム決定）" : "";
     const msg = `投票の結果、${executedName} が追放されました${tieNote}。`;
     hostLogs.push(`⚖️ ${msg}`);
+
+    // ★ 最優先：追放されたのが「てるてる」なら単独勝利！
+    if (executedRole === "teruteru") {
+      hostWinnerName = executedName;
+      finishGame("teruteru", `追放された ${executedName} の正体は「☀️ てるてる」でした！`);
+      return;
+    }
+
+    // 霊媒師に追放者の正体を記録
+    const isWolf = executedRole === "werewolf";
+    ctx.players.forEach(p => {
+      if (hostRoles[p.id] === "medium") {
+        hostMediumLogs[p.id].push({
+          day: hostDay,
+          targetName: executedName,
+          isWolf
+        });
+      }
+    });
 
     const winner = checkWinner();
     if (winner) {
@@ -325,11 +423,10 @@
       seerDone: false,
       guardTarget: null
     };
-    hostHeadline = `${prevMsg} 恐ろしい夜がやってきました...`;
+    hostHeadline = `${prevMsg} 恐ろしい夜がやってきました（霊媒師は追放者の霊媒結果を確認できます）...`;
     hostLogs.push(`🌙 【${hostDay}日目・夜】それぞれの夜の行動を行っています...`);
     syncAll();
 
-    // 役職持ち（人狼・生存占い師・生存狩人）が全員死亡/不在なら3秒後に朝へ
     checkNightCompletion(true);
   };
 
@@ -385,30 +482,46 @@
     clearHostTimer();
     hostPhase = "GAME_OVER";
     hostWinnerTeam = winnerTeam;
-    const winTitle = winnerTeam === "village" ? "🎉 市民陣営の勝利！" : "🐺 人狼陣営の勝利！";
+
+    let winTitle = "🎉 市民陣営の勝利！";
+    if (winnerTeam === "wolf") winTitle = "🐺 人狼陣営の勝利！";
+    if (winnerTeam === "teruteru") winTitle = `☀️ てるてる（${hostWinnerName}）の単独勝利！`;
+
     hostHeadline = `${reasonMsg} → ${winTitle}`;
     hostLogs.push(`🏆 【決着】${winTitle}`);
     syncAll();
   };
 
-  // 新規マッチ開始
-  const startNewWerewolfMatch = () => {
+  // 設定された役職配分でマッチ開始
+  const startMatchWithConfiguredRoles = () => {
+    if (getTotalConfiguredRoles() !== ctx.players.length) return;
+    if ((hostRoleCounts.werewolf || 0) < 1) return;
+
     clearHostTimer();
-    const deck = shuffle(buildRoleDeck(ctx.players.length));
+    const rawDeck = [];
+    ROLE_ORDER.forEach(roleKey => {
+      const n = hostRoleCounts[roleKey] || 0;
+      for (let i = 0; i < n; i++) rawDeck.push(roleKey);
+    });
+
+    const deck = shuffle(rawDeck);
     hostRoles = {};
     hostAlive = {};
     hostReadyMap = {};
     hostVotes = {};
     hostFortuneLogs = {};
+    hostMediumLogs = {};
     hostNightActions = { seerDone: false, seerTarget: null };
     hostDay = 1;
     hostWinnerTeam = null;
+    hostWinnerName = "";
     hostLogs = [];
 
     ctx.players.forEach((p, idx) => {
       hostRoles[p.id] = deck[idx];
       hostAlive[p.id] = true;
       hostFortuneLogs[p.id] = [];
+      hostMediumLogs[p.id] = [];
     });
 
     hostPhase = "FIRST_NIGHT";
@@ -432,7 +545,7 @@
   registerGame({
     id: "werewolf",
     name: "🐺 人狼ゲーム",
-    description: "市民陣営と人狼陣営に分かれて戦う正体隠匿心理戦！占い・護衛・襲撃・昼の議論と投票に対応。",
+    description: "霊媒師・てるてる・役職人数カスタム対応！市民・人狼・第三陣営が入り乱れる正体隠匿心理戦。",
     minPlayers: 4,
     maxPlayers: 12,
 
@@ -443,39 +556,68 @@
       publicState = null;
       initialized = true;
 
-      container.innerHTML = `<div id="ww-root" class="ww-wrapper"><p style="text-align:center;">役職を配布中...</p></div>`;
+      container.innerHTML = `<div id="ww-root" class="ww-wrapper"><p style="text-align:center;">読み込み中...</p></div>`;
 
       while (earlyPackets.length > 0) {
         this.onReceiveData(earlyPackets.shift());
       }
 
       if (ctx.isHost) {
-        startNewWerewolfMatch();
+        openSetupScreen(false);
       }
     },
 
     onPlayerAction(playerId, action) {
       if (!ctx.isHost) return;
 
-      // ホスト専用進行コントロール
-      if (action.type === "RESTART" && playerId === ctx.myId) {
-        startNewWerewolfMatch();
-        return;
-      }
-      if (action.type === "HOST_EXTEND_TIME" && playerId === ctx.myId && hostPhase === "DAY_DISCUSS") {
-        hostTimeLeft += 60;
-        ctx.broadcast({ type: "WW_TICK", timeLeft: hostTimeLeft });
-        return;
-      }
-      if (action.type === "HOST_FORCE_NEXT" && playerId === ctx.myId) {
-        if (hostPhase === "FIRST_NIGHT") {
-          startDayDiscussion("ホストの進行により1日目の昼が始まりました！");
-        } else if (hostPhase === "DAY_DISCUSS") {
-          startDayVote();
-        } else if (hostPhase === "NIGHT") {
-          resolveNight();
+      // ホスト専用：セットアップ操作
+      if (playerId === ctx.myId && hostPhase === "SETUP") {
+        if (action.type === "ADJUST_ROLE_COUNT") {
+          const { roleKey, delta } = action;
+          if (!ROLES[roleKey]) return;
+          const current = hostRoleCounts[roleKey] || 0;
+          const minVal = roleKey === "werewolf" ? 1 : 0; // 人狼は最低1人
+          const next = Math.max(minVal, Math.min(ctx.players.length, current + delta));
+          hostRoleCounts[roleKey] = next;
+          syncAll();
+          return;
         }
-        return;
+        if (action.type === "AUTO_BALANCE_ROLES") {
+          hostRoleCounts = buildRecommendedCounts(ctx.players.length);
+          syncAll();
+          return;
+        }
+        if (action.type === "START_CONFIGURED_MATCH") {
+          startMatchWithConfiguredRoles();
+          return;
+        }
+      }
+
+      // ホスト専用：ゲーム中・終了後の進行コントロール
+      if (playerId === ctx.myId) {
+        if (action.type === "RESTART_SAME") {
+          startMatchWithConfiguredRoles();
+          return;
+        }
+        if (action.type === "BACK_TO_SETUP") {
+          openSetupScreen(true);
+          return;
+        }
+        if (action.type === "HOST_EXTEND_TIME" && hostPhase === "DAY_DISCUSS") {
+          hostTimeLeft += 60;
+          ctx.broadcast({ type: "WW_TICK", timeLeft: hostTimeLeft });
+          return;
+        }
+        if (action.type === "HOST_FORCE_NEXT") {
+          if (hostPhase === "FIRST_NIGHT") {
+            startDayDiscussion("ホストの進行により1日目の昼が始まりました！");
+          } else if (hostPhase === "DAY_DISCUSS") {
+            startDayVote();
+          } else if (hostPhase === "NIGHT") {
+            resolveNight();
+          }
+          return;
+        }
       }
 
       // 1. 1日目夜：役職確認完了
@@ -520,7 +662,7 @@
         if (!hostAlive[targetId] || targetId === playerId) return;
 
         if (action.type === "NIGHT_WOLF" && hostRoles[playerId] === "werewolf") {
-          if (hostRoles[targetId] === "werewolf") return; // 仲間は襲撃不可
+          if (hostRoles[targetId] === "werewolf") return;
           hostNightActions.attackTarget = targetId;
           hostNightActions.wolfVoterName = getPlayerName(playerId);
           syncAll();
@@ -573,11 +715,112 @@
 
     render() {
       const root = document.getElementById("ww-root");
-      if (!root || !publicState || !myPrivate) return;
+      if (!root || !publicState) return;
+
+      const phase = publicState.phase;
+
+      // ==========================================
+      // 画面A：役職配分カスタム設定画面（SETUP）
+      // ==========================================
+      if (phase === "SETUP") {
+        const counts = publicState.roleCounts || {};
+        const totalConfigured = ROLE_ORDER.reduce((s, k) => s + (counts[k] || 0), 0);
+        const playerTotal = ctx.players.length;
+        const diff = playerTotal - totalConfigured;
+        const isValid = diff === 0 && (counts.werewolf || 0) >= 1;
+
+        const rowsHtml = ROLE_ORDER.map(key => {
+          const r = ROLES[key];
+          const val = counts[key] || 0;
+          return `
+            <div class="ww-setup-row">
+              <div class="ww-setup-info">
+                <strong>${r.name}</strong>
+                <span class="ww-setup-team">${r.teamLabel}</span>
+              </div>
+              <div class="ww-setup-ctrl">
+                ${ctx.isHost ? `
+                  <button class="ww-count-btn" data-role="${key}" data-delta="-1">－</button>
+                  <span class="ww-count-val">${val}</span>
+                  <button class="ww-count-btn" data-role="${key}" data-delta="1">＋</button>
+                ` : `
+                  <span class="ww-count-val">${val} 人</span>
+                `}
+              </div>
+            </div>
+          `;
+        }).join("");
+
+        root.innerHTML = `
+          <div class="ww-header-bar">
+            <span class="ww-phase-badge ww-phase-setup">⚙️ 役職配分のカスタム設定</span>
+            <span style="font-size:0.9rem; color:#94a3b8;">参加プレイヤー: ${playerTotal}人</span>
+          </div>
+
+          <div class="ww-panel">
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+              <h3>各役職の人数</h3>
+              ${ctx.isHost ? `<button id="ww-auto-balance-btn" class="btn small secondary">参加人数に合わせて自動調整</button>` : ""}
+            </div>
+
+            <div class="ww-setup-list">${rowsHtml}</div>
+
+            <div class="ww-setup-summary" style="border: 1px solid ${isValid ? "#10b981" : "#ef4444"};">
+              <span>設定合計: ${totalConfigured} / ${playerTotal} 人</span>
+              <span style="color:${isValid ? "#34d399" : "#f87171"};">
+                ${isValid
+                  ? "✅ 開始できます！"
+                  : diff > 0
+                    ? `あと ${diff} 人増やしてください`
+                    : `${Math.abs(diff)} 人オーバーしています`}
+              </span>
+            </div>
+
+            ${ctx.isHost ? `
+              <button id="ww-start-match-btn" class="btn primary" ${isValid ? "" : "disabled"} style="${isValid ? "" : "opacity:0.5; cursor:not-allowed;"}">
+                この配分でゲーム開始！
+              </button>
+            ` : `
+              <p class="waiting-msg">ホストが役職配分を決定してゲームを開始するのを待っています...</p>
+            `}
+          </div>
+        `;
+
+        if (ctx.isHost) {
+          root.querySelectorAll(".ww-count-btn").forEach(btn => {
+            btn.addEventListener("click", () => {
+              ctx.sendAction({
+                type: "ADJUST_ROLE_COUNT",
+                roleKey: btn.dataset.role,
+                delta: Number(btn.dataset.delta)
+              });
+            });
+          });
+
+          const autoBtn = document.getElementById("ww-auto-balance-btn");
+          if (autoBtn) {
+            autoBtn.addEventListener("click", () => {
+              ctx.sendAction({ type: "AUTO_BALANCE_ROLES" });
+            });
+          }
+
+          const startBtn = document.getElementById("ww-start-match-btn");
+          if (startBtn && isValid) {
+            startBtn.addEventListener("click", () => {
+              ctx.sendAction({ type: "START_CONFIGURED_MATCH" });
+            });
+          }
+        }
+        return;
+      }
+
+      // ==========================================
+      // 画面B：ゲーム進行画面（夜・昼・投票・決着）
+      // ==========================================
+      if (!myPrivate) return;
 
       const roleInfo = ROLES[myPrivate.role] || ROLES.villager;
       const amIAlive = !!publicState.alive[ctx.myId];
-      const phase = publicState.phase;
 
       // フェーズバッジ表示
       let phaseText = "";
@@ -593,11 +836,19 @@
       } else if (phase === "NIGHT") {
         phaseText = `🌙 ${publicState.day}日目・夜（夜の行動）`;
       } else if (phase === "GAME_OVER") {
-        phaseText = publicState.winnerTeam === "village" ? "🎉 市民陣営の勝利！" : "🐺 人狼陣営の勝利！";
-        phaseClass = "ww-phase-over";
+        if (publicState.winnerTeam === "village") {
+          phaseText = "🎉 市民陣営の勝利！";
+          phaseClass = "ww-phase-over";
+        } else if (publicState.winnerTeam === "wolf") {
+          phaseText = "🐺 人狼陣営の勝利！";
+          phaseClass = "ww-phase-over";
+        } else {
+          phaseText = `☀️ てるてる（${esc(publicState.winnerName)}）の単独勝利！`;
+          phaseClass = "ww-phase-teru";
+        }
       }
 
-      // 自分の役職カード内の秘密情報（仲間・占い結果）
+      // 自分の役職カード内の秘密情報（仲間・占い結果・霊媒結果）
       let secretHtml = "";
       if (myPrivate.role === "werewolf" && myPrivate.fellowWolves.length > 1) {
         const names = myPrivate.fellowWolves.map(w => esc(w.name)).join("、");
@@ -612,8 +863,18 @@
         ).join("");
         secretHtml += `<div>🔮 占い結果履歴:<ul style="margin-left:18px; margin-top:4px;">${items}</ul></div>`;
       }
+      if (myPrivate.role === "medium") {
+        if (myPrivate.mediumResults && myPrivate.mediumResults.length > 0) {
+          const items = myPrivate.mediumResults.map(r =>
+            `<li>${r.day}日目追放: <strong>${esc(r.targetName)}</strong> → <span style="color:${r.isWolf ? "#f87171" : "#38bdf8"}; font-weight:bold;">${r.isWolf ? "🐺 人狼だった！" : "🧑 人間だった（人狼ではない）"}</span></li>`
+          ).join("");
+          secretHtml += `<div>🕯️ 霊媒結果履歴:<ul style="margin-left:18px; margin-top:4px;">${items}</ul></div>`;
+        } else {
+          secretHtml += `<div style="color:#94a3b8;">🕯️ 霊媒結果: まだ追放されたプレイヤーがいません。</div>`;
+        }
+      }
 
-      // アクションパネル（フェーズ・役職ごとの操作UI）
+      // アクションパネル
       let actionPanelHtml = "";
 
       if (phase === "FIRST_NIGHT") {
@@ -668,6 +929,8 @@
           nightGuide = myPrivate.myNightTarget
             ? `✅ 今晩は <strong>${esc(getPlayerName(myPrivate.myNightTarget))}</strong> を護衛します（他役職の完了待ち...）`
             : "🛡️ 下の一覧から、今晩人狼の襲撃から守る相手を1人選んでください。";
+        } else if (myPrivate.role === "medium") {
+          nightGuide = "🕯️ 上の役職カードで追放者の霊媒結果を確認しつつ、朝が来るのをお待ちください。";
         }
         actionPanelHtml = `
           <div class="ww-panel">
@@ -676,25 +939,37 @@
           </div>
         `;
       } else if (phase === "GAME_OVER") {
+        let winHeadline = "🎉 市民陣営の勝利です！";
+        let winColor = "#34d399";
+        if (publicState.winnerTeam === "wolf") {
+          winHeadline = "🐺 人狼陣営の勝利です！";
+          winColor = "#f87171";
+        } else if (publicState.winnerTeam === "teruteru") {
+          winHeadline = `☀️ てるてる（${esc(publicState.winnerName)}）の単独勝利です！`;
+          winColor = "#facc15";
+        }
+
         actionPanelHtml = `
           <div class="ww-panel" style="text-align:center;">
-            <h3 style="font-size:1.3rem; color:#34d399; margin-bottom:10px;">
-              ${publicState.winnerTeam === "village" ? "🎉 市民陣営の勝利です！" : "🐺 人狼陣営の勝利です！"}
-            </h3>
-            ${ctx.isHost
-              ? `<button id="ww-restart-btn" class="btn primary">役職を配り直してもう一度遊ぶ</button>`
-              : `<p style="color:#94a3b8;">ホストが次のゲームを開始するのを待っています...</p>`}
+            <h3 style="font-size:1.3rem; color:${winColor}; margin-bottom:12px;">${winHeadline}</h3>
+            ${ctx.isHost ? `
+              <div style="display:flex; gap:10px; justify-content:center; flex-wrap:wrap;">
+                <button id="ww-restart-same-btn" class="btn primary" style="width:auto; padding:10px 20px;">同じ配分で再戦する</button>
+                <button id="ww-back-setup-btn" class="btn secondary" style="width:auto; padding:10px 20px;">役職配分を変更する</button>
+              </div>
+            ` : `
+              <p style="color:#94a3b8;">ホストが次のゲームを準備するのを待っています...</p>
+            `}
           </div>
         `;
       }
 
-      // プレイヤーカード一覧（選択ボタン付き）
+      // プレイヤーカード一覧
       const playerCardsHtml = ctx.players.map(p => {
         const isAlive = !!publicState.alive[p.id];
         const isMe = p.id === ctx.myId;
         const isWolfMate = myPrivate.role === "werewolf" && myPrivate.fellowWolves.some(w => w.id === p.id);
 
-        // このプレイヤーに対して今押せるボタンを判定
         let actionBtnHtml = "";
         if (amIAlive && isAlive && !isMe) {
           if (phase === "DAY_VOTE" && !myPrivate.myVote) {
@@ -709,7 +984,6 @@
           }
         }
 
-        // ゲーム終了後の役職公開ラベル
         let revealedTag = "";
         if (phase === "GAME_OVER" && publicState.revealedRoles) {
           const rObj = ROLES[publicState.revealedRoles[p.id]];
@@ -718,7 +992,6 @@
           }
         }
 
-        // 1日目夜の準備完了バッジ
         const readyTag = (phase === "FIRST_NIGHT" && publicState.readyMap[p.id])
           ? `<span class="ww-status-tag ready">準備OK</span>`
           : "";
@@ -744,6 +1017,7 @@
           <button id="ww-force-next-btn" class="btn small">
             ${phase === "DAY_DISCUSS" ? "議論を打ち切って投票へ進む" : "次のフェーズへ強制進行"}
           </button>
+          <button id="ww-abort-setup-btn" class="btn small danger">配分設定へ戻る</button>
         </div>
       ` : "";
 
@@ -758,7 +1032,7 @@
 
         <!-- 自分の役職カード -->
         <div class="ww-role-card ${roleInfo.css}">
-          <div class="ww-role-title">あなたの役職: ${roleInfo.name} ${amIAlive ? "" : "（脱落中）"}</div>
+          <div class="ww-role-title">あなたの役職: ${roleInfo.name}（${roleInfo.teamLabel}） ${amIAlive ? "" : "※脱落中"}</div>
           <div class="ww-role-desc">${roleInfo.desc}</div>
           ${secretHtml ? `<div class="ww-secret-box">${secretHtml}</div>` : ""}
         </div>
@@ -795,9 +1069,7 @@
 
       root.querySelectorAll(".ww-target-btn").forEach(btn => {
         btn.addEventListener("click", () => {
-          const actionType = btn.dataset.action;
-          const targetId = btn.dataset.target;
-          ctx.sendAction({ type: actionType, targetId });
+          ctx.sendAction({ type: btn.dataset.action, targetId: btn.dataset.target });
         });
       });
 
@@ -817,10 +1089,26 @@
         });
       }
 
-      const restartBtn = document.getElementById("ww-restart-btn");
-      if (restartBtn) {
-        restartBtn.addEventListener("click", () => {
-          ctx.sendAction({ type: "RESTART" });
+      const abortSetupBtn = document.getElementById("ww-abort-setup-btn");
+      if (abortSetupBtn) {
+        abortSetupBtn.addEventListener("click", () => {
+          if (confirm("現在のゲームを中断して役職配分画面へ戻りますか？")) {
+            ctx.sendAction({ type: "BACK_TO_SETUP" });
+          }
+        });
+      }
+
+      const restartSameBtn = document.getElementById("ww-restart-same-btn");
+      if (restartSameBtn) {
+        restartSameBtn.addEventListener("click", () => {
+          ctx.sendAction({ type: "RESTART_SAME" });
+        });
+      }
+
+      const backSetupBtn = document.getElementById("ww-back-setup-btn");
+      if (backSetupBtn) {
+        backSetupBtn.addEventListener("click", () => {
+          ctx.sendAction({ type: "BACK_TO_SETUP" });
         });
       }
     }

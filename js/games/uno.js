@@ -1,11 +1,18 @@
 (() => {
-  // カードデザイン用のCSSを自動注入（style.cssの編集不要）
+  // カードデザイン＆タッチ最適化CSSを自動注入
   const injectUnoStyles = () => {
     if (document.getElementById("uno-custom-style")) return;
     const style = document.createElement("style");
     style.id = "uno-custom-style";
     style.textContent = `
-      .uno-wrapper { display: flex; flex-direction: column; gap: 16px; }
+      .uno-wrapper {
+        display: flex; flex-direction: column; gap: 16px;
+        touch-action: manipulation;
+      }
+      .uno-wrapper button, .uno-card, .uno-color-btn {
+        touch-action: manipulation;
+        -webkit-tap-highlight-color: transparent;
+      }
       .uno-status-bar {
         display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center;
         background: #1e293b; padding: 12px; border-radius: 8px; gap: 8px;
@@ -21,6 +28,10 @@
       .uno-uno-badge {
         background: #ef4444; color: #fff; font-weight: bold; font-size: 0.75rem;
         padding: 2px 6px; border-radius: 4px; animation: unoPulse 1s infinite;
+      }
+      .uno-sync-badge {
+        background: #0284c7; color: #fff; font-size: 0.75rem; font-weight: bold;
+        padding: 3px 8px; border-radius: 999px;
       }
       .uno-stack-alert {
         background: #7f1d1d; border: 2px solid #ef4444; color: #fecaca;
@@ -38,11 +49,15 @@
         width: 68px; height: 98px; border-radius: 10px; border: 3px solid #fff;
         display: flex; flex-direction: column; align-items: center; justify-content: center;
         font-weight: bold; color: #fff; text-shadow: 1px 1px 2px rgba(0,0,0,0.7);
-        user-select: none; box-shadow: 0 4px 6px rgba(0,0,0,0.4); transition: transform 0.15s, opacity 0.15s;
+        user-select: none; box-shadow: 0 4px 6px rgba(0,0,0,0.4);
+        transition: transform 0.1s ease, opacity 0.1s ease;
         position: relative; text-align: center; padding: 2px;
       }
       .uno-card.playable { cursor: pointer; }
-      .uno-card.playable:hover { transform: translateY(-10px); }
+      @media (hover: hover) {
+        .uno-card.playable:hover { transform: translateY(-10px); }
+      }
+      .uno-card.playable:active { transform: scale(0.93); }
       .uno-card.disabled { opacity: 0.4; cursor: not-allowed; }
       .uno-card-val { font-size: 1.4rem; }
       .uno-card-sub { font-size: 0.65rem; margin-top: 2px; }
@@ -60,7 +75,7 @@
         border-color: #ef4444;
         background: repeating-linear-gradient(45deg, #7f1d1d, #7f1d1d 8px, #450a0a 8px, #450a0a 16px);
       }
-      .uno-deck-back:hover { transform: scale(1.05); }
+      .uno-deck-back:active { transform: scale(0.94); }
 
       .uno-color-indicator {
         padding: 4px 14px; border-radius: 999px; font-weight: bold; font-size: 0.9rem; color: #fff;
@@ -102,9 +117,12 @@
   let publicState = null;
   let pendingWildCardIndex = null;
   let drawnCardCanPlay = false;
+  let isSendingAction = false;
+  let sendTimeout = null;
+  let lastTurnSeq = -1;
 
   // ホスト専用ゲーム状態
-  let hostStackRuleEnabled = true; // ローカルルール：ドロー重ね出し（デフォルトON）
+  let hostStackRuleEnabled = true;
   let hostDeck = [];
   let hostDiscard = [];
   let hostHands = {};
@@ -113,17 +131,16 @@
   let hostCurrentColor = "red";
   let hostUnoDeclared = {};
   let hostDrawnPlayerId = null;
-  let hostPendingDrawCount = 0; // 累積ドロー枚数
-  let hostPendingDrawType = null; // "draw2" または "wild4"
+  let hostPendingDrawCount = 0;
+  let hostPendingDrawType = null;
   let hostWinnerId = null;
   let hostLastLog = "";
+  let hostTurnSeq = 0;
 
-  // HTMLエスケープ
   const esc = (str) => String(str).replace(/[&<>"']/g, s => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
   }[s]));
 
-  // カード表示用ラベル
   const formatCardLabel = (card) => {
     const map = {
       skip: { main: "⊘", sub: "スキップ" },
@@ -182,10 +199,8 @@
     return drawn;
   };
 
-  // カードが出せるかどうかの判定（累積ダメージ中も考慮）
   const canPlayCard = (card, topCard, currentColor, pendingDrawCount = 0, pendingDrawType = null) => {
     if (pendingDrawCount > 0) {
-      // 累積ドロー中は「同じ種類のドローカード」だけ重ねられる
       return card.value === pendingDrawType;
     }
     if (card.color === "wild") return true;
@@ -199,19 +214,16 @@
     return ((hostTurnIndex + hostDirection * step) % n + n) % n;
   };
 
+  // ★ 改善ポイント：手札と盤面状態を1パケット（UNO_SYNC）に統合して送信
   const syncAllPlayers = () => {
+    hostTurnSeq++;
     const handCounts = {};
     ctx.players.forEach(p => {
       handCounts[p.id] = (hostHands[p.id] || []).length;
-      ctx.sendToPlayer(p.id, {
-        type: "UNO_HAND",
-        hand: hostHands[p.id] || []
-      });
     });
 
     const topCard = hostDiscard[hostDiscard.length - 1];
-    ctx.broadcast({
-      type: "UNO_STATE",
+    const baseState = {
       topCard,
       currentColor: hostCurrentColor,
       currentPlayerId: ctx.players[hostTurnIndex].id,
@@ -224,7 +236,16 @@
       pendingDrawType: hostPendingDrawType,
       stackRuleEnabled: hostStackRuleEnabled,
       winnerId: hostWinnerId,
-      lastLog: hostLastLog
+      lastLog: hostLastLog,
+      turnSeq: hostTurnSeq
+    };
+
+    ctx.players.forEach(p => {
+      ctx.sendToPlayer(p.id, {
+        type: "UNO_SYNC",
+        hand: hostHands[p.id] || [],
+        state: baseState
+      });
     });
   };
 
@@ -239,13 +260,13 @@
     hostPendingDrawCount = 0;
     hostPendingDrawType = null;
     hostWinnerId = null;
+    hostTurnSeq = 0;
 
     ctx.players.forEach(p => {
       hostHands[p.id] = drawFromDeck(7);
       hostUnoDeclared[p.id] = false;
     });
 
-    // 最初の場札（ワイルドドロー4・ドロー2は避けて開始をスムーズにする）
     let firstCard = drawFromDeck(1)[0];
     while (firstCard.value === "wild4" || firstCard.value === "draw2") {
       hostDeck.unshift(firstCard);
@@ -276,6 +297,9 @@
       publicState = null;
       pendingWildCardIndex = null;
       drawnCardCanPlay = false;
+      isSendingAction = false;
+      lastTurnSeq = -1;
+      clearTimeout(sendTimeout);
       initialized = true;
 
       container.innerHTML = `<div id="uno-root" class="uno-wrapper"><p style="text-align:center;">カードを配布中...</p></div>`;
@@ -289,10 +313,26 @@
       }
     },
 
+    dispatchAction(actionObj) {
+      if (isSendingAction) return;
+      isSendingAction = true;
+      this.render();
+
+      ctx.sendAction(actionObj);
+
+      // 通信遅延やエラー時の安全ロック解除（2.5秒）
+      clearTimeout(sendTimeout);
+      sendTimeout = setTimeout(() => {
+        if (isSendingAction) {
+          isSendingAction = false;
+          this.render();
+        }
+      }, 2500);
+    },
+
     onPlayerAction(playerId, action) {
       if (!ctx.isHost) return;
 
-      // リスタート・ルール切替はいつでもホストから実行可能
       if (action.type === "RESTART") {
         startNewMatch();
         return;
@@ -309,7 +349,7 @@
       const playerName = player ? player.name : "プレイヤー";
       const currentPlayer = ctx.players[hostTurnIndex];
 
-      // 1. UNO宣言（手札2枚以下ならいつでも宣言可）
+      // 1. UNO宣言
       if (action.type === "DECLARE_UNO") {
         if ((hostHands[playerId] || []).length <= 2 && !hostUnoDeclared[playerId]) {
           hostUnoDeclared[playerId] = true;
@@ -340,9 +380,8 @@
       // 以降は自分のターンのみ有効
       if (currentPlayer.id !== playerId) return;
 
-      // 3. 山札から引く（通常1枚ドロー、または累積ペナルティ全受け）
+      // 3. 山札から引く
       if (action.type === "DRAW_CARD") {
-        // ★ 累積ドロー中の場合：溜まっている枚数をすべて引いてターン終了
         if (hostPendingDrawCount > 0) {
           const drawn = drawFromDeck(hostPendingDrawCount);
           hostHands[playerId].push(...drawn);
@@ -359,7 +398,6 @@
           return;
         }
 
-        // 通常の1枚ドロー
         if (hostDrawnPlayerId === playerId) return;
         const drawn = drawFromDeck(1);
         if (drawn.length === 0) {
@@ -388,7 +426,7 @@
         return;
       }
 
-      // 4. 引いた後に出さずにパスする
+      // 4. 引いた後に出さずにパス
       if (action.type === "PASS_AFTER_DRAW") {
         if (hostDrawnPlayerId !== playerId) return;
         hostDrawnPlayerId = null;
@@ -409,19 +447,16 @@
 
         if (hostDrawnPlayerId === playerId && action.cardIndex !== hand.length - 1) return;
 
-        // カードを場に出す
         hand.splice(action.cardIndex, 1);
         hostDiscard.push(card);
         hostDrawnPlayerId = null;
 
-        // 色の確定
         if (card.color === "wild") {
           hostCurrentColor = COLORS.includes(action.chosenColor) ? action.chosenColor : "red";
         } else {
           hostCurrentColor = card.color;
         }
 
-        // 勝利判定
         if (hand.length === 0) {
           hostPendingDrawCount = 0;
           hostPendingDrawType = null;
@@ -431,7 +466,6 @@
           return;
         }
 
-        // 記号カードの効果処理
         let step = 1;
         let effectMsg = "";
         const label = formatCardLabel(card);
@@ -451,13 +485,11 @@
           effectMsg = `（${skippedPlayer.name} をスキップ！）`;
         } else if (card.value === "draw2") {
           if (hostStackRuleEnabled) {
-            // ★ 重ね出しルールON：累積して次の人へ回す
             hostPendingDrawCount += 2;
             hostPendingDrawType = "draw2";
             step = 1;
             effectMsg = `（🔥 累積ドロー: 合計 +${hostPendingDrawCount}枚！次の人はドロー2で回避可能！）`;
           } else {
-            // 重ね出しルールOFF：即座に引かせてスキップ
             const victimIndex = getNextIndex(1);
             const victim = ctx.players[victimIndex];
             const drawn = drawFromDeck(2);
@@ -468,13 +500,11 @@
           }
         } else if (card.value === "wild4") {
           if (hostStackRuleEnabled) {
-            // ★ 重ね出しルールON：累積して次の人へ回す
             hostPendingDrawCount += 4;
             hostPendingDrawType = "wild4";
             step = 1;
             effectMsg = `（色: ${COLOR_NAMES[hostCurrentColor]} / 🔥 累積ドロー: 合計 +${hostPendingDrawCount}枚！次の人は+4で回避可能！）`;
           } else {
-            // 重ね出しルールOFF：即座に引かせてスキップ
             const victimIndex = getNextIndex(1);
             const victim = ctx.players[victimIndex];
             const drawn = drawFromDeck(4);
@@ -498,13 +528,18 @@
         earlyPackets.push(data);
         return;
       }
-      if (data.type === "UNO_HAND") {
-        myHand = data.hand || [];
+      if (data.type === "UNO_SYNC" && data.state) {
+        // ネットワーク遅延による古いパケットの逆転を無視
+        if (typeof data.state.turnSeq === "number" && data.state.turnSeq < lastTurnSeq) {
+          return;
+        }
+        lastTurnSeq = data.state.turnSeq ?? lastTurnSeq;
+        myHand = Array.isArray(data.hand) ? data.hand : [];
+        publicState = data.state;
+        drawnCardCanPlay = (publicState.drawnPlayerId === ctx.myId);
         pendingWildCardIndex = null;
-        this.render();
-      } else if (data.type === "UNO_STATE") {
-        publicState = data;
-        drawnCardCanPlay = (data.drawnPlayerId === ctx.myId);
+        isSendingAction = false;
+        clearTimeout(sendTimeout);
         this.render();
       }
     },
@@ -514,17 +549,20 @@
       if (!root || !publicState) return;
 
       const isMyTurn = (publicState.currentPlayerId === ctx.myId) && !publicState.winnerId;
+      const canOperate = isMyTurn && !isSendingAction;
       const top = publicState.topCard;
       const topLabel = formatCardLabel(top);
       const pendingCount = publicState.pendingDrawCount || 0;
       const pendingType = publicState.pendingDrawType || null;
       const pendingCardName = pendingType === "wild4" ? "ワイルドドロー4 (+4)" : "ドロー2 (+2)";
+      const handCounts = publicState.handCounts || {};
+      const unoDeclared = publicState.unoDeclared || {};
 
       // プレイヤー一覧チップ
       const playersHtml = ctx.players.map(p => {
-        const count = publicState.handCounts[p.id] ?? 0;
+        const count = handCounts[p.id] ?? 0;
         const isTurn = (p.id === publicState.currentPlayerId) && !publicState.winnerId;
-        const isUno = publicState.unoDeclared[p.id] && count === 1;
+        const isUno = unoDeclared[p.id] && count === 1;
         return `
           <div class="uno-player-chip ${isTurn ? "active" : ""}">
             <span>${esc(p.name)}</span>
@@ -537,14 +575,14 @@
       // UNO忘れ指摘対象
       const uncalledPlayers = ctx.players.filter(p =>
         p.id !== ctx.myId &&
-        (publicState.handCounts[p.id] === 1) &&
-        !publicState.unoDeclared[p.id]
+        (handCounts[p.id] === 1) &&
+        !unoDeclared[p.id]
       );
 
       // 自分の手札HTML
       const handHtml = myHand.map((card, idx) => {
         const label = formatCardLabel(card);
-        let playable = isMyTurn && canPlayCard(card, top, publicState.currentColor, pendingCount, pendingType);
+        let playable = canOperate && canPlayCard(card, top, publicState.currentColor, pendingCount, pendingType);
         if (drawnCardCanPlay && idx !== myHand.length - 1) {
           playable = false;
         }
@@ -565,18 +603,17 @@
         </div>
       ` : "";
 
-      // アクションボタン群
-      const canDeclareUno = myHand.length <= 2 && myHand.length > 0 && !publicState.unoDeclared[ctx.myId];
+      const canDeclareUno = !isSendingAction && myHand.length <= 2 && myHand.length > 0 && !unoDeclared[ctx.myId];
 
-      // 山札ボタンの表示テキスト
       let deckSubText = "山札";
       if (isMyTurn && !drawnCardCanPlay) {
         deckSubText = pendingCount > 0 ? `💥 ${pendingCount}枚引く` : "1枚引く";
       }
 
-      // ターン案内メッセージ
       let turnGuideText = "他のプレイヤーのターンです...";
-      if (isMyTurn) {
+      if (isSendingAction) {
+        turnGuideText = "⏳ サーバーと同期中...";
+      } else if (isMyTurn) {
         if (pendingCount > 0) {
           turnGuideText = `⚠️ 累積ドロー中！手札の「${pendingCardName}」を重ねるか、山札を押して ${pendingCount}枚 引いてください`;
         } else {
@@ -589,11 +626,12 @@
         <div class="uno-status-bar">
           <div class="uno-players">${playersHtml}</div>
           <div style="display:flex; flex-wrap:wrap; align-items:center; gap:8px;">
+            ${isSendingAction ? `<span class="uno-sync-badge">⏳ 同期中</span>` : ""}
             <span style="font-size:0.85rem; color:#94a3b8;">
               進行: ${publicState.direction === 1 ? "順回り ➡" : "逆回り ⬅"} / 山札: ${publicState.deckCount}枚
             </span>
             ${ctx.isHost ? `
-              <button id="uno-toggle-stack-btn" class="btn small ${publicState.stackRuleEnabled ? "secondary" : ""}" title="クリックでルール切替＆再配布">
+              <button id="uno-toggle-stack-btn" class="btn small ${publicState.stackRuleEnabled ? "secondary" : ""}">
                 重ね出し: ${publicState.stackRuleEnabled ? "ON" : "OFF"}
               </button>
             ` : `
@@ -602,7 +640,7 @@
           </div>
         </div>
 
-        <!-- 中央の場（山札・場札・現在の有効色） -->
+        <!-- 中央の場 -->
         <div class="uno-table">
           ${pendingCount > 0 ? `
             <div class="uno-stack-alert">
@@ -615,7 +653,7 @@
           </div>
 
           <div class="uno-piles">
-            <div id="uno-deck-btn" class="uno-card uno-deck-back ${isMyTurn && pendingCount > 0 ? "penalty" : ""}" title="山札から引く">
+            <div id="uno-deck-btn" class="uno-card uno-deck-back ${canOperate && pendingCount > 0 ? "penalty" : ""} ${(!canOperate || drawnCardCanPlay) ? "disabled" : ""}">
               <div class="uno-card-val">${isMyTurn && pendingCount > 0 ? `+${pendingCount}` : "UNO"}</div>
               <div class="uno-card-sub">${deckSubText}</div>
             </div>
@@ -626,7 +664,7 @@
             </div>
           </div>
 
-          <div class="uno-log">${esc(publicState.lastLog)}</div>
+          <div class="uno-log">${esc(publicState.lastLog || "")}</div>
 
           ${publicState.winnerId ? `
             <div style="text-align:center; margin-top:8px;">
@@ -639,18 +677,18 @@
           `}
         </div>
 
-        <!-- 操作ボタン（累積受け入れ・UNO宣言・指摘・パス） -->
+        <!-- 操作ボタン -->
         <div class="uno-controls">
-          ${isMyTurn && pendingCount > 0 ? `
+          ${canOperate && pendingCount > 0 ? `
             <button id="uno-accept-draw-btn" class="btn danger small">💥 諦めて累積 ${pendingCount}枚 を引く</button>
           ` : ""}
           ${canDeclareUno ? `<button id="uno-declare-btn" class="btn danger small">🔥 UNO宣言！</button>` : ""}
-          ${drawnCardCanPlay ? `<button id="uno-pass-btn" class="btn secondary small">引いたカードを出さずにパス</button>` : ""}
-          ${uncalledPlayers.map(p => `
+          ${canOperate && drawnCardCanPlay ? `<button id="uno-pass-btn" class="btn secondary small">引いたカードを出さずにパス</button>` : ""}
+          ${!isSendingAction ? uncalledPlayers.map(p => `
             <button class="btn danger small uno-callout-btn" data-target="${p.id}">
               🚨 ${esc(p.name)} のUNO忘れを指摘！(+2枚)
             </button>
-          `).join("")}
+          `).join("") : ""}
         </div>
 
         ${colorPickerHtml}
@@ -667,12 +705,12 @@
         el.addEventListener("click", () => {
           const idx = Number(el.dataset.idx);
           const card = myHand[idx];
-          if (!card) return;
+          if (!card || isSendingAction) return;
           if (card.color === "wild") {
             pendingWildCardIndex = idx;
             this.render();
           } else {
-            ctx.sendAction({ type: "PLAY_CARD", cardIndex: idx });
+            this.dispatchAction({ type: "PLAY_CARD", cardIndex: idx });
           }
         });
       });
@@ -682,7 +720,7 @@
           const chosenColor = btn.dataset.pickColor;
           const idx = pendingWildCardIndex;
           pendingWildCardIndex = null;
-          ctx.sendAction({ type: "PLAY_CARD", cardIndex: idx, chosenColor });
+          this.dispatchAction({ type: "PLAY_CARD", cardIndex: idx, chosenColor });
         });
       });
 
@@ -695,43 +733,43 @@
       }
 
       const deckBtn = document.getElementById("uno-deck-btn");
-      if (deckBtn && isMyTurn && !drawnCardCanPlay) {
+      if (deckBtn && canOperate && !drawnCardCanPlay) {
         deckBtn.addEventListener("click", () => {
-          ctx.sendAction({ type: "DRAW_CARD" });
+          this.dispatchAction({ type: "DRAW_CARD" });
         });
       }
 
       const acceptDrawBtn = document.getElementById("uno-accept-draw-btn");
       if (acceptDrawBtn) {
         acceptDrawBtn.addEventListener("click", () => {
-          ctx.sendAction({ type: "DRAW_CARD" });
+          this.dispatchAction({ type: "DRAW_CARD" });
         });
       }
 
       const passBtn = document.getElementById("uno-pass-btn");
       if (passBtn) {
         passBtn.addEventListener("click", () => {
-          ctx.sendAction({ type: "PASS_AFTER_DRAW" });
+          this.dispatchAction({ type: "PASS_AFTER_DRAW" });
         });
       }
 
       const declareBtn = document.getElementById("uno-declare-btn");
       if (declareBtn) {
         declareBtn.addEventListener("click", () => {
-          ctx.sendAction({ type: "DECLARE_UNO" });
+          this.dispatchAction({ type: "DECLARE_UNO" });
         });
       }
 
       root.querySelectorAll(".uno-callout-btn").forEach(btn => {
         btn.addEventListener("click", () => {
-          ctx.sendAction({ type: "CALL_OUT_UNO", targetId: btn.dataset.target });
+          this.dispatchAction({ type: "CALL_OUT_UNO", targetId: btn.dataset.target });
         });
       });
 
       const restartBtn = document.getElementById("uno-restart-btn");
       if (restartBtn) {
         restartBtn.addEventListener("click", () => {
-          ctx.sendAction({ type: "RESTART" });
+          this.dispatchAction({ type: "RESTART" });
         });
       }
 
@@ -739,7 +777,7 @@
       if (toggleStackBtn) {
         toggleStackBtn.addEventListener("click", () => {
           if (confirm("重ね出しルールを切り替えて、新しいゲームを再配布しますか？")) {
-            ctx.sendAction({ type: "TOGGLE_STACK_RULE" });
+            this.dispatchAction({ type: "TOGGLE_STACK_RULE" });
           }
         });
       }

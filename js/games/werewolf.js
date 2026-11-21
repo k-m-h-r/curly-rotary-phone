@@ -718,6 +718,10 @@
       if (!root || !publicState) return;
 
       const phase = publicState.phase;
+      // Firebaseで空オブジェクト/空配列が省略された場合に備えた安全なフォールバック
+      const aliveMap = publicState.alive || {};
+      const readyMap = publicState.readyMap || {};
+      const logsList = publicState.logs || [];
 
       // ==========================================
       // 画面A：役職配分カスタム設定画面（SETUP）
@@ -820,7 +824,10 @@
       if (!myPrivate) return;
 
       const roleInfo = ROLES[myPrivate.role] || ROLES.villager;
-      const amIAlive = !!publicState.alive[ctx.myId];
+      const amIAlive = !!aliveMap[ctx.myId];
+      const fellowWolves = myPrivate.fellowWolves || [];
+      const fortuneResults = myPrivate.fortuneResults || [];
+      const mediumResults = myPrivate.mediumResults || [];
 
       // フェーズバッジ表示
       let phaseText = "";
@@ -850,22 +857,22 @@
 
       // 自分の役職カード内の秘密情報（仲間・占い結果・霊媒結果）
       let secretHtml = "";
-      if (myPrivate.role === "werewolf" && myPrivate.fellowWolves.length > 1) {
-        const names = myPrivate.fellowWolves.map(w => esc(w.name)).join("、");
+      if (myPrivate.role === "werewolf" && fellowWolves.length > 1) {
+        const names = fellowWolves.map(w => esc(w.name)).join("、");
         secretHtml += `<div>🤝 人狼の仲間: <strong>${names}</strong></div>`;
       }
       if (myPrivate.role === "werewolf" && phase === "NIGHT" && myPrivate.wolfPlannedTarget) {
         secretHtml += `<div style="color:#fca5a5;">🎯 現在の襲撃予定: <strong>${esc(myPrivate.wolfPlannedTarget.targetName)}</strong>（選択: ${esc(myPrivate.wolfPlannedTarget.by)}）</div>`;
       }
-      if (myPrivate.role === "seer" && myPrivate.fortuneResults.length > 0) {
-        const items = myPrivate.fortuneResults.map(r =>
+      if (myPrivate.role === "seer" && fortuneResults.length > 0) {
+        const items = fortuneResults.map(r =>
           `<li>${r.day}日目夜: <strong>${esc(r.targetName)}</strong> → <span style="color:${r.isWolf ? "#f87171" : "#38bdf8"}; font-weight:bold;">${r.isWolf ? "🐺 人狼！" : "🧑 人間（人狼ではない）"}</span></li>`
         ).join("");
         secretHtml += `<div>🔮 占い結果履歴:<ul style="margin-left:18px; margin-top:4px;">${items}</ul></div>`;
       }
       if (myPrivate.role === "medium") {
-        if (myPrivate.mediumResults && myPrivate.mediumResults.length > 0) {
-          const items = myPrivate.mediumResults.map(r =>
+        if (mediumResults.length > 0) {
+          const items = mediumResults.map(r =>
             `<li>${r.day}日目追放: <strong>${esc(r.targetName)}</strong> → <span style="color:${r.isWolf ? "#f87171" : "#38bdf8"}; font-weight:bold;">${r.isWolf ? "🐺 人狼だった！" : "🧑 人間だった（人狼ではない）"}</span></li>`
           ).join("");
           secretHtml += `<div>🕯️ 霊媒結果履歴:<ul style="margin-left:18px; margin-top:4px;">${items}</ul></div>`;
@@ -886,7 +893,7 @@
             ${!myPrivate.readyConfirmed ? `
               <button id="ww-ready-btn" class="btn primary">役職を確認した（準備完了）</button>
             ` : `
-              <p style="color:#34d399; font-weight:bold;">✅ 準備完了！他のプレイヤーの確認を待っています（${publicState.readyCount}/${ctx.players.length}人）</p>
+              <p style="color:#34d399; font-weight:bold;">✅ 準備完了！他のプレイヤーの確認を待っています（${publicState.readyCount || 0}/${ctx.players.length}人）</p>
             `}
           </div>
         `;
@@ -903,7 +910,7 @@
       } else if (phase === "DAY_VOTE") {
         actionPanelHtml = `
           <div class="ww-panel">
-            <h3>🗳️ 追放投票（投票済み: ${publicState.votedCount}/${publicState.totalAliveCount}人）</h3>
+            <h3>🗳️ 追放投票（投票済み: ${publicState.votedCount || 0}/${publicState.totalAliveCount || 0}人）</h3>
             <p style="font-size:0.9rem; color:#cbd5e1;">
               ${!amIAlive
                 ? "追放・襲撃されたプレイヤーは投票できません。"
@@ -966,9 +973,9 @@
 
       // プレイヤーカード一覧
       const playerCardsHtml = ctx.players.map(p => {
-        const isAlive = !!publicState.alive[p.id];
+        const isAlive = !!aliveMap[p.id];
         const isMe = p.id === ctx.myId;
-        const isWolfMate = myPrivate.role === "werewolf" && myPrivate.fellowWolves.some(w => w.id === p.id);
+        const isWolfMate = myPrivate.role === "werewolf" && fellowWolves.some(w => w.id === p.id);
 
         let actionBtnHtml = "";
         if (amIAlive && isAlive && !isMe) {
@@ -992,7 +999,7 @@
           }
         }
 
-        const readyTag = (phase === "FIRST_NIGHT" && publicState.readyMap[p.id])
+        const readyTag = (phase === "FIRST_NIGHT" && readyMap[p.id])
           ? `<span class="ww-status-tag ready">準備OK</span>`
           : "";
 
@@ -1027,7 +1034,7 @@
           <span class="ww-phase-badge ${phaseClass}">${phaseText}</span>
           ${phase === "DAY_DISCUSS"
             ? `<span id="ww-timer-display" class="ww-timer">残り ${publicState.timeLeft}秒</span>`
-            : `<span style="font-size:0.9rem; color:#94a3b8;">生存者: ${publicState.totalAliveCount} / ${ctx.players.length}人</span>`}
+            : `<span style="font-size:0.9rem; color:#94a3b8;">生存者: ${publicState.totalAliveCount || 0} / ${ctx.players.length}人</span>`}
         </div>
 
         <!-- 自分の役職カード -->
@@ -1038,7 +1045,7 @@
         </div>
 
         <!-- 現在の状況アナウンス -->
-        <div class="ww-announce">${esc(publicState.headline)}</div>
+        <div class="ww-announce">${esc(publicState.headline || "")}</div>
 
         <!-- フェーズごとのアクションパネル -->
         ${actionPanelHtml}
@@ -1054,7 +1061,7 @@
         <div class="ww-panel">
           <h3>📜 進行ログ</h3>
           <ul class="ww-log-list">
-            ${publicState.logs.map(l => `<li>${esc(l)}</li>`).join("")}
+            ${logsList.map(l => `<li>${esc(l)}</li>`).join("")}
           </ul>
         </div>
       `;
